@@ -255,7 +255,7 @@ int cycle(TwoBit *tb, uint32_t tid, uint32_t start, uint32_t end, uint32_t *pos,
 /*
     Increment the counter for the appropriate base
 */
-inline void increment(char base, uint32_t *A, uint32_t *C, uint32_t *T, uint32_t *G) {
+void increment(char base, uint32_t *A, uint32_t *C, uint32_t *T, uint32_t *G) {
     switch(base) {
     case 'T':
         *T += 1;
@@ -316,7 +316,7 @@ error:
 }
 
 double *twobitFrequency(TwoBit *tb, char *chrom, uint32_t start, uint32_t end) {
-    uint32_t tid, i;
+    uint32_t tid = 0, i;
 
     //Get the chromosome ID
     for(i=0; i<tb->hdr->nChroms; i++) {
