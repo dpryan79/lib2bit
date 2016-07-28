@@ -135,37 +135,11 @@ char *constructSequence(TwoBit *tb, uint32_t tid, uint32_t start, uint32_t end) 
     while(pos < sz - 1) {
         if(twobitRead(&byte, 1, 1, tb) != 1) goto error;
 
-        //The first base (given an offset)
-        seq[pos++] = byte2base(byte, offset);
-        if(++offset >= 4) {
-            offset = 0;
-            continue;
+        for(; offset<4; offset++) {
+            seq[pos++] = byte2base(byte, offset);
+            if(pos >= sz - 1) break;
         }
-        if(pos >= sz - 1) break;
-
-        //base 2, this sort of implementation just saves rereading a byte for each position
-        seq[pos++] = byte2base(byte, offset);
-        if(++offset >= 4) {
-            offset = 0;
-            continue;
-        }
-        if(pos >= sz - 1) break;
-
-        //base 3
-        seq[pos++] = byte2base(byte, offset);
-        if(++offset >= 4) {
-            offset = 0;
-            continue;
-        }
-        if(pos >= sz - 1) break;
-
-        //base 4
-        seq[pos++] = byte2base(byte, offset);
-        if(++offset >= 4) {
-            offset = 0;
-            continue;
-        }
-        if(pos >= sz - 1) break;
+        offset = 0;
     }
 
     //Null terminate the output
@@ -194,7 +168,6 @@ error:
 */
 char *twobitSequence(TwoBit *tb, char *chrom, uint32_t start, uint32_t end) {
     uint32_t i, tid=0;
-    char *seq = NULL;
 
     //Get the chromosome ID
     for(i=0; i<tb->hdr->nChroms; i++) {
@@ -214,42 +187,122 @@ char *twobitSequence(TwoBit *tb, char *chrom, uint32_t start, uint32_t end) {
     if(end > tb->idx->size[tid]) return NULL;
     if(start >= end) return NULL;
 
-    seq = constructSequence(tb, tid, start, end);
-    return seq;
+    return constructSequence(tb, tid, start, end);
 }
 
-//This is a suboptimal implementation
-double *twobitFrequency(TwoBit *tb, char *chrom, uint32_t start, uint32_t end) {
-    char *seq = twobitSequence(tb, chrom, start, end);
-    double *out = malloc(4 * sizeof(double));
-    uint32_t A = 0, C = 0, T = 0, G = 0, i, len;
+/*
+    Given a tid and a position, set the various mask variables to an appropriate block of Ns.
 
-    if(!seq) goto error;
-    if(!out) goto error;
-    len = strlen(seq);
+     * If maskIdx is not -1, these are set to the first overlapping block (or maskIdx is set to the number of N blocks).
+     * If maskIdx is not -1 then it's incremented and maskStart/maskEnd set appropriately.
 
-    for(i=0; i < len; i++) {
-        switch(seq[i]) {
-            case 'A':
-            case 'a':
-                A++;
-                break;
-            case 'C':
-            case 'c':
-                C++;
-                break;
-            case 'T':
-            case 't':
-                T++;
-                break;
-            case 'G':
-            case 'g':
-                G++;
-                break;
+    If the returned interval doesn't overlap the start/end range, then both values will be -1.
+*/
+void getMask(TwoBit *tb, uint32_t tid, uint32_t start, uint32_t end, uint32_t *maskIdx, uint32_t *maskStart, uint32_t *maskEnd) {
+    if(*maskIdx == (uint32_t) -1) {
+        for((*maskIdx)=0; (*maskIdx)<tb->idx->nBlockCount[tid]; (*maskIdx)++) {
+           *maskStart = tb->idx->nBlockStart[tid][*maskIdx];
+           *maskEnd = (*maskStart) + tb->idx->nBlockSizes[tid][*maskIdx];
+           if(*maskEnd < start) continue;
+           if(*maskEnd >= start) break;
+        }
+    } else if(*maskIdx >= tb->idx->nBlockCount[tid]) {
+        *maskStart = (uint32_t) -1;
+        *maskEnd = (uint32_t) -1;
+    } else {
+        *maskIdx += 1;
+        if(*maskIdx >= tb->idx->nBlockCount[tid]) {
+            *maskStart = (uint32_t) -1;
+            *maskEnd = (uint32_t) -1;
+        } else {
+            *maskStart = tb->idx->nBlockStart[tid][*maskIdx];
+            *maskEnd = (*maskStart) + tb->idx->nBlockSizes[tid][*maskIdx];
         }
     }
 
-    free(seq);
+    //maskStart = maskEnd = -1 if no overlap
+    if(*maskIdx >= tb->idx->nBlockCount[tid] || *maskStart >= end) {
+        *maskStart = (uint32_t) -1;
+        *maskEnd = (uint32_t) -1;
+    }
+}
+
+/*
+    Determine whether "start + pos" overlaps an N block. If so, update pos, return 1, and update the mask stuff (as well as update blockStart and offset). If there's no overlap, return 0.
+
+    Returning a value of 1 indicates that pos has been updated (i.e., there was an overlap). A value of 0 indicates otherwise.
+
+    A return value of -1 indicates an error (in twobitSeek).
+*/
+int cycle(TwoBit *tb, uint32_t tid, uint32_t start, uint32_t end, uint32_t *pos, uint32_t *maskIdx, uint32_t *maskStart, uint32_t *maskEnd, uint32_t *blockStart, uint32_t *offset) {
+    if(*maskIdx < tb->idx->nBlockCount[tid]) {
+        if(end < *maskStart) {
+            getMask(tb, tid, start, end, maskIdx, maskStart, maskEnd);
+            if(*maskIdx < tb->idx->nBlockCount[tid]) return 0;
+        }
+        if((start + *pos >= *maskStart) && (start + *pos < *maskEnd)) {
+            *pos += (*maskEnd) - (start + *pos);
+            *blockStart = (start + *pos)/4;
+            *offset = (start + *pos) % 4;
+            getMask(tb, tid, start, end, maskIdx, maskStart, maskEnd);
+            if(twobitSeek(tb, tb->idx->offset[tid] + *blockStart) != 0) return -1;
+            return 1;
+        }
+    }
+    return 0;
+}
+
+/*
+    Increment the counter for the appropriate base
+*/
+inline void increment(char base, uint32_t *A, uint32_t *C, uint32_t *T, uint32_t *G) {
+    switch(base) {
+    case 'T':
+        *T += 1;
+        break;
+    case 'C':
+        *C += 1;
+        break;
+    case 'A':
+        *A += 1;
+        break;
+    case 'G':
+        *G += 1;
+        break;
+    }
+}
+
+double *twobitFrequencyWorker(TwoBit *tb, uint32_t tid, uint32_t start, uint32_t end) {
+    double *out = malloc(4 * sizeof(double));
+    uint32_t sz = end - start, pos = 0;
+    uint32_t A = 0, C = 0, T = 0, G = 0, len = end - start;
+    uint32_t maskIdx = -1, maskStart = -1, maskEnd = -1;
+    uint32_t blockStart, offset;
+    uint8_t byte, base;
+    int rv;
+    if(!out) return NULL;
+
+    getMask(tb, tid, start, end, &maskIdx, &maskStart, &maskEnd);
+
+    //There are 4 bases/byte
+    blockStart = start/4;
+    offset = start % 4;
+
+    if(twobitSeek(tb, tb->idx->offset[tid] + blockStart) != 0) goto error;
+    while(pos < sz) {
+        //Iterate over the 4 (or less) bases in each byte
+        if(twobitRead(&byte, 1, 1, tb) != 1) goto error;
+        for(; offset<4; offset++) {
+            rv = cycle(tb, tid, start, end, &pos, &maskIdx, &maskStart, &maskEnd, &blockStart, &offset);
+            if(rv == -1) goto error;
+            if(rv == 1) break;
+            base = byte2base(byte, offset);
+            increment(base, &A, &C, &T, &G);
+            if(++pos >= sz) break;
+        }
+        if(rv != 1) offset = 0;
+    }
+
     out[0] = ((double) A)/((double) len);
     out[1] = ((double) C)/((double) len);
     out[2] = ((double) T)/((double) len);
@@ -258,9 +311,33 @@ double *twobitFrequency(TwoBit *tb, char *chrom, uint32_t start, uint32_t end) {
     return out;
 
 error:
-    if(seq) free(seq);
-    if(out) free(out);
+    free(out);
     return NULL;
+}
+
+double *twobitFrequency(TwoBit *tb, char *chrom, uint32_t start, uint32_t end) {
+    uint32_t tid, i;
+
+    //Get the chromosome ID
+    for(i=0; i<tb->hdr->nChroms; i++) {
+        if(strcmp(tb->cl->chrom[i], chrom) == 0) {
+            tid = i;
+            break;
+        }
+    }
+
+    if(tid == 0 && strcmp(tb->cl->chrom[i], chrom) != 0) return NULL;
+
+    //Get the start/end if not specified
+    if(start == end && end == 0) {
+        end = tb->idx->size[tid];
+    }
+
+    //Sanity check the bounds
+    if(end > tb->idx->size[tid]) return NULL;
+    if(start >= end) return NULL;
+
+    return twobitFrequencyWorker(tb, tid, start, end);
 }
 
 /*
