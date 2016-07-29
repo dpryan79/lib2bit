@@ -22,14 +22,14 @@ int main(int argc, char *argv[]) {
     if(seq) free(seq);
 
     double *stats;
-    stats = twobitFrequency(tb, "chr1", 0, 0, 1);
+    stats = twobitBases(tb, "chr1", 0, 0, 1);
     assert(stats);
     for(i=0; i<4; i++) {
         printf("%"PRIu32"\t%f\n", i, stats[i]);
     }
     free(stats);
 
-    stats = twobitFrequency(tb, "chr1", 24, 74, 1);
+    stats = twobitBases(tb, "chr1", 24, 74, 1);
     assert(stats);
     for(i=0; i<4; i++) {
         printf("%"PRIu32"\t%f\n", i, stats[i]);
