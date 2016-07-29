@@ -279,7 +279,7 @@ double *twobitFrequencyWorker(TwoBit *tb, uint32_t tid, uint32_t start, uint32_t
     uint32_t maskIdx = -1, maskStart = -1, maskEnd = -1;
     uint32_t blockStart, offset;
     uint8_t byte, base;
-    int rv;
+    int rv = 0;
     if(!out) return NULL;
 
     getMask(tb, tid, start, end, &maskIdx, &maskStart, &maskEnd);
