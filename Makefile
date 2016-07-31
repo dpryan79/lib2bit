@@ -26,6 +26,9 @@ lib-static: lib2bit.a
 
 lib-shared: lib2bit.so
 
+doc:
+	doxygen
+
 .c.o:   
 	$(CC) -I. $(CFLAGS) $(INCLUDES) -c -o $@ $<
 
