@@ -62,6 +62,41 @@ char byte2base(uint8_t byte, int offset) {
     return bases[foo];
 }
 
+void bytes2bases(char *seq, uint8_t *byte, uint32_t sz, int offset) {
+    uint32_t pos = 0, remainder = 0, i = 0;
+    char bases[4] = "TCAG";
+    uint8_t foo = byte[0];
+
+    // Deal with the first partial byte
+    if(offset != 0) {
+        while(offset < 4) {
+           seq[pos++] = byte2base(foo, offset++);
+        }
+        foo = byte[++i];
+    }
+
+    // Deal with everything else, with the possible exception of the last fractional byte
+    remainder = (sz - pos) % 4;
+    while(pos < sz - remainder) {
+        foo = byte[i++];
+        seq[pos + 3] = bases[foo & 3];
+        foo >>= 2;
+        seq[pos + 2] = bases[foo & 3];
+        foo >>= 2;
+        seq[pos + 1] = bases[foo & 3];
+        foo >>= 2;
+        seq[pos] = bases[foo & 3];
+        foo >>= 2;
+        pos += 4;
+    }
+
+    // Deal with the last partial byte
+    if(remainder > 0) foo = byte[i];
+    for(offset=0; offset<remainder; offset++) {
+        seq[pos++] = byte2base(foo, offset);
+    }
+}
+
 /*
     Replace Ts (or whatever else is being used) with N as appropriate
 */
@@ -122,25 +157,23 @@ void softMask(char *seq, TwoBit *tb, uint32_t tid, uint32_t start, uint32_t end)
     This is the worker function for twobitSequence, which mostly does error checking
 */
 char *constructSequence(TwoBit *tb, uint32_t tid, uint32_t start, uint32_t end) {
-    uint32_t sz = end - start + 1, pos = 0;
-    uint32_t blockStart, offset;
-    char *seq = malloc(sz * sizeof(char)), byte;
+    uint32_t sz = end - start + 1;
+    uint32_t blockStart, blockEnd, offset;
+    char *seq = malloc(sz * sizeof(char));
+    uint8_t *bytes = NULL;
     if(!seq) return NULL;
 
     //There are 4 bases/byte
     blockStart = start/4;
     offset = start % 4;
+    blockEnd = end/4 + ((end % 4) ? 1 : 0);
+    bytes = malloc(blockEnd - blockStart);
+    if(!bytes) goto error;
 
     if(twobitSeek(tb, tb->idx->offset[tid] + blockStart) != 0) goto error;
-    while(pos < sz - 1) {
-        if(twobitRead(&byte, 1, 1, tb) != 1) goto error;
-
-        for(; offset<4; offset++) {
-            seq[pos++] = byte2base(byte, offset);
-            if(pos >= sz - 1) break;
-        }
-        offset = 0;
-    }
+    if(twobitRead(bytes, blockEnd - blockStart, 1, tb) != 1) goto error;
+    bytes2bases(seq, bytes, sz - 1, offset);
+    free(bytes);
 
     //Null terminate the output
     seq[sz - 1] = '\0';
@@ -155,6 +188,7 @@ char *constructSequence(TwoBit *tb, uint32_t tid, uint32_t start, uint32_t end) 
 
 error:
     if(seq) free(seq);
+    if(bytes) free(bytes);
     return NULL;
 }
 
