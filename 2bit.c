@@ -308,12 +308,9 @@ void increment(char base, uint32_t *A, uint32_t *C, uint32_t *T, uint32_t *G) {
 
 void *twobitBasesWorker(TwoBit *tb, uint32_t tid, uint32_t start, uint32_t end, int fraction) {
     void *out;
-    uint32_t sz = end - start, pos = 0;
-    uint32_t A = 0, C = 0, T = 0, G = 0, len = end - start;
-    uint32_t maskIdx = -1, maskStart = -1, maskEnd = -1;
-    uint32_t blockStart, offset;
-    uint8_t byte, base;
-    int rv = 0;
+    uint32_t A = 0, C = 0, T = 0, G = 0, len = end - start, i = 0;
+    uint32_t blockStart, blockEnd, offset;
+    char *s = NULL;
 
     if(fraction) {
         out = malloc(4 * sizeof(double));
@@ -321,27 +318,30 @@ void *twobitBasesWorker(TwoBit *tb, uint32_t tid, uint32_t start, uint32_t end, 
         out = malloc(4 * sizeof(uint32_t));
     }
     if(!out) return NULL;
+    s = constructSequence(tb, tid, start, end);
+    if(!s) goto error;
 
-    getMask(tb, tid, start, end, &maskIdx, &maskStart, &maskEnd);
-
-    //There are 4 bases/byte
-    blockStart = start/4;
-    offset = start % 4;
-
-    if(twobitSeek(tb, tb->idx->offset[tid] + blockStart) != 0) goto error;
-    while(pos < sz) {
-        //Iterate over the 4 (or less) bases in each byte
-        if(twobitRead(&byte, 1, 1, tb) != 1) goto error;
-        for(; offset<4; offset++) {
-            rv = cycle(tb, tid, start, end, &pos, &maskIdx, &maskStart, &maskEnd, &blockStart, &offset);
-            if(rv == -1) goto error;
-            if(rv == 1) break;
-            base = byte2base(byte, offset);
-            increment(base, &A, &C, &T, &G);
-            if(++pos >= sz) break;
+    for(i=0; i<len; i++) {
+        switch(s[i]) {
+            case 'A':
+            case 'a':
+                A++;
+                break;
+            case 'C':
+            case 'c':
+                C++;
+                break;
+            case 'G':
+            case 'g':
+                G++;
+                break;
+            case 'T':
+            case 't':
+                T++;
+                break;
         }
-        if(rv != 1) offset = 0;
     }
+    free(s);
 
     if(fraction) {
         ((double*) out)[0] = ((double) A)/((double) len);
@@ -359,6 +359,7 @@ void *twobitBasesWorker(TwoBit *tb, uint32_t tid, uint32_t start, uint32_t end, 
 
 error:
     free(out);
+    if(s) free(s);
     return NULL;
 }
 
