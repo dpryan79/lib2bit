@@ -368,15 +368,17 @@ void *twobitBasesWorker(TwoBit *tb, uint32_t tid, uint32_t start, uint32_t end, 
     }
     free(bytes);
 
+    //out is in TCAG order, since that's how 2bit is stored.
+    //However, for whatever reason I went with ACTG in the first release...
     if(fraction) {
-        ((double*) out)[0] = ((double) tmp[0])/((double) len);
+        ((double*) out)[0] = ((double) tmp[2])/((double) len);
         ((double*) out)[1] = ((double) tmp[1])/((double) len);
-        ((double*) out)[2] = ((double) tmp[2])/((double) len);
+        ((double*) out)[2] = ((double) tmp[0])/((double) len);
         ((double*) out)[3] = ((double) tmp[3])/((double) len);
     } else {
-        ((uint32_t*) out)[0] = tmp[0];
+        ((uint32_t*) out)[0] = tmp[2];
         ((uint32_t*) out)[1] = tmp[1];
-        ((uint32_t*) out)[2] = tmp[2];
+        ((uint32_t*) out)[2] = tmp[0];
         ((uint32_t*) out)[3] = tmp[3];
     }
 
