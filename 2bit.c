@@ -261,56 +261,23 @@ void getMask(TwoBit *tb, uint32_t tid, uint32_t start, uint32_t end, uint32_t *m
     }
 }
 
-/*
-    Determine whether "start + pos" overlaps an N block. If so, update pos, return 1, and update the mask stuff (as well as update blockStart and offset). If there's no overlap, return 0.
-
-    Returning a value of 1 indicates that pos has been updated (i.e., there was an overlap). A value of 0 indicates otherwise.
-
-    A return value of -1 indicates an error (in twobitSeek).
-*/
-int cycle(TwoBit *tb, uint32_t tid, uint32_t start, uint32_t end, uint32_t *pos, uint32_t *maskIdx, uint32_t *maskStart, uint32_t *maskEnd, uint32_t *blockStart, uint32_t *offset) {
-    if(*maskIdx < tb->idx->nBlockCount[tid]) {
-        if(end < *maskStart) {
-            getMask(tb, tid, start, end, maskIdx, maskStart, maskEnd);
-            if(*maskIdx < tb->idx->nBlockCount[tid]) return 0;
-        }
-        if((start + *pos >= *maskStart) && (start + *pos < *maskEnd)) {
-            *pos += (*maskEnd) - (start + *pos);
-            *blockStart = (start + *pos)/4;
-            *offset = (start + *pos) % 4;
-            getMask(tb, tid, start, end, maskIdx, maskStart, maskEnd);
-            if(twobitSeek(tb, tb->idx->offset[tid] + *blockStart) != 0) return -1;
-            return 1;
-        }
+uint8_t getByteMaskFromOffset(int offset) {
+    switch(offset) {
+        case 0:
+            return (uint8_t) 15;
+        case 1:
+            return (uint8_t) 7;
+        case 2:
+            return (uint8_t) 3;
     }
-    return 0;
-}
-
-/*
-    Increment the counter for the appropriate base
-*/
-void increment(char base, uint32_t *A, uint32_t *C, uint32_t *T, uint32_t *G) {
-    switch(base) {
-    case 'T':
-        *T += 1;
-        break;
-    case 'C':
-        *C += 1;
-        break;
-    case 'A':
-        *A += 1;
-        break;
-    case 'G':
-        *G += 1;
-        break;
-    }
+    return 1;
 }
 
 void *twobitBasesWorker(TwoBit *tb, uint32_t tid, uint32_t start, uint32_t end, int fraction) {
     void *out;
-    uint32_t A = 0, C = 0, T = 0, G = 0, len = end - start, i = 0;
-    uint32_t blockStart, blockEnd, offset;
-    char *s = NULL;
+    uint32_t tmp[4] = {0, 0, 0, 0}, len = end - start, i = 0, j = 0;
+    uint32_t blockStart, blockEnd, maskIdx = (uint32_t) -1, maskStart, maskEnd, foo;
+    uint8_t *bytes = NULL, mask = 0, offset;
 
     if(fraction) {
         out = malloc(4 * sizeof(double));
@@ -318,48 +285,106 @@ void *twobitBasesWorker(TwoBit *tb, uint32_t tid, uint32_t start, uint32_t end, 
         out = malloc(4 * sizeof(uint32_t));
     }
     if(!out) return NULL;
-    s = constructSequence(tb, tid, start, end);
-    if(!s) goto error;
 
-    for(i=0; i<len; i++) {
-        switch(s[i]) {
-            case 'A':
-            case 'a':
-                A++;
-                break;
-            case 'C':
-            case 'c':
-                C++;
-                break;
-            case 'G':
-            case 'g':
-                G++;
-                break;
-            case 'T':
-            case 't':
-                T++;
-                break;
+    //There are 4 bases/byte
+    blockStart = start/4;
+    offset = start % 4;
+    blockEnd = end/4 + ((end % 4) ? 1 : 0);
+    bytes = malloc(blockEnd - blockStart);
+    if(!bytes) goto error;
+
+    //Set the initial mask
+    mask = getByteMaskFromOffset(offset);
+
+    if(twobitSeek(tb, tb->idx->offset[tid] + blockStart) != 0) goto error;
+    if(twobitRead(bytes, blockEnd - blockStart, 1, tb) != 1) goto error;
+
+    //Get the index/start/end of the next N-mask block
+    getMask(tb, tid, start, end, &maskIdx, &maskStart, &maskEnd);
+
+    while(i < len) {
+        // Check if we need to jump
+        if(maskIdx != -1 && start + i + 4 >= maskStart) {
+            if(start + i >= maskStart || start + i + 4 - offset > maskStart) {
+                //Jump iff the whole byte is inside an N block
+                if(start + i >= maskStart && start + i + 4 - offset < maskEnd) {
+                    //iff we're fully in an N block then jump
+                    i = maskEnd - start;
+                    getMask(tb, tid, i, end, &maskIdx, &maskStart, &maskEnd);
+                    offset = (start + i) % 4;
+                    j = i / 4;
+                    mask = getByteMaskFromOffset(offset);
+                    i = 4 * j; //Now that the mask has been set, reset i to byte offsets
+                    offset = 0;
+                    continue;
+                }
+
+                //Set the mask, if appropriate
+                foo = 4*j + 4*blockStart; // The smallest position in the byte
+                if(mask & 1 && (foo + 3 >= maskStart && foo + 3 < maskEnd)) mask -= 1;
+                if(mask & 2 && (foo + 2 >= maskStart && foo + 2 < maskEnd)) mask -= 2;
+                if(mask & 4 && (foo + 1 >= maskStart && foo + 1 < maskEnd)) mask -= 4;
+                if(mask & 8 && (foo >= maskStart && foo < maskEnd)) mask -= 8;
+                if(foo + 4 > maskEnd) {
+                    getMask(tb, tid, i, end, &maskIdx, &maskStart, &maskEnd);
+                    continue;
+                }
+            }
         }
+
+        //Ensure that anything after then end is masked
+        if(i+4>=len) {
+            if((mask & 1) && i+3>=len) mask -=1;
+            if((mask & 2) && i+2>=len) mask -=2;
+            if((mask & 4) && i+1>=len) mask -=4;
+            if((mask & 8) && i>=len) mask -=8;
+        }
+
+        foo = bytes[j++];
+        //Offset 3
+        if(mask & 1) {
+            tmp[foo & 3]++;
+        }
+        foo >>= 2;
+        mask >>= 1;
+        //Offset 2
+        if(mask & 1) {
+            tmp[foo & 3]++;
+        }
+        foo >>= 2;
+        mask >>= 1;
+        //Offset 1
+        if(mask & 1) {
+            tmp[foo & 3]++;
+        }
+        foo >>= 2;
+        mask >>= 1;
+        //Offset 0
+        if(mask & 1) {
+            tmp[foo & 3]++; // offset 0
+        }
+        i += 4;
+        mask = 15;
     }
-    free(s);
+    free(bytes);
 
     if(fraction) {
-        ((double*) out)[0] = ((double) A)/((double) len);
-        ((double*) out)[1] = ((double) C)/((double) len);
-        ((double*) out)[2] = ((double) T)/((double) len);
-        ((double*) out)[3] = ((double) G)/((double) len);
+        ((double*) out)[0] = ((double) tmp[0])/((double) len);
+        ((double*) out)[1] = ((double) tmp[1])/((double) len);
+        ((double*) out)[2] = ((double) tmp[2])/((double) len);
+        ((double*) out)[3] = ((double) tmp[3])/((double) len);
     } else {
-        ((uint32_t*) out)[0] = A;
-        ((uint32_t*) out)[1] = C;
-        ((uint32_t*) out)[2] = T;
-        ((uint32_t*) out)[3] = G;
+        ((uint32_t*) out)[0] = tmp[0];
+        ((uint32_t*) out)[1] = tmp[1];
+        ((uint32_t*) out)[2] = tmp[2];
+        ((uint32_t*) out)[3] = tmp[3];
     }
 
     return out;
 
 error:
-    free(out);
-    if(s) free(s);
+    if(out) free(out);
+    if(bytes) free(bytes);
     return NULL;
 }
 
