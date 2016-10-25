@@ -1,4 +1,8 @@
 #!/usr/bin/env python
+"""
+The expected output is below:
+
+"""
 from subprocess import Popen, PIPE, check_call
 from os import remove
 
