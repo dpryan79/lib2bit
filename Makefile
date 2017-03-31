@@ -8,7 +8,7 @@ LDFLAGS =
 LDLIBS =
 INCLUDES = 
 
-prefix = /usr/local
+prefix = ${DESTDIR}/usr/local
 includedir = $(prefix)/include
 libdir = $(exec_prefix)/lib
 
