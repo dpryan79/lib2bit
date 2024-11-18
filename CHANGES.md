@@ -1,3 +1,6 @@
+0.2.2:
+  - Fixed an error if the length requested is very short (issue #10)
+
 0.2.1:
   - Fixed a segfault that occurs if a 1 or 2 base sequence is requested that does not overlap either the start or end of a byte.
 
