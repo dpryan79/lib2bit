@@ -47,6 +47,7 @@ test/exampleRead: lib2bit.so
 	$(CC) -o $@ -I. -L. $(CFLAGS) test/exampleRead.c -l2bit $(LIBS) -Wl,-rpath .
 
 test: test/exampleRead
+	./test/exampleRead test/foo.2bit
 	./test/test.py
 
 clean:
