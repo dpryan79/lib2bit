@@ -1,0 +1,19 @@
+name: Test
+on:
+  pull_request:
+
+jobs:
+  testLinux:
+    name: Test Linux
+    runs-on: "ubuntu-latest"
+    steps:
+      - uses: actions/checkout@v2
+      - run: |
+          make && make test
+  testOSX:
+    name: Test OSX
+    runs-on: "macos-latest"
+    steps:
+      - uses: actions/checkout@v2
+      - run: |
+          make && make test
