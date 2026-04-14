@@ -45,7 +45,7 @@ typedef struct {
  */
 typedef struct {
     char **chrom; /**<A list of null terminated chromosomes */
-    uint32_t *offset; /**<The file offset for the beginning of each chromosome */
+    uint64_t *offset; /**<The file offset for the beginning of each chromosome */
 } TwoBitCL;
 
 /*!
