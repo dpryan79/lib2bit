@@ -1,3 +1,6 @@
+1.0.0:
+  - Added support for version 1 (64-bit) files
+
 0.2.2:
   - Fixed an error if the length requested is very short (issue #10)
 

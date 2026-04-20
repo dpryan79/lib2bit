@@ -1,7 +1,7 @@
 #include <inttypes.h>
 #include <stdio.h>
 
-/*! \mainpage libBigWig
+/*! \mainpage lib2bit
  *
  * \section Introduction
  *
