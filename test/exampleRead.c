@@ -14,11 +14,11 @@ int main(int argc, char *argv[]) {
 
     char *seq;
     seq = twobitSequence(tb, "chr1", 0, 0);
-    printf("%s\n", seq);
+    if(seq) printf("%s\n", seq);
     if(seq) free(seq);
 
     seq = twobitSequence(tb, "chr1", 24, 74);
-    printf("%s\n", seq);
+    if(seq) printf("%s\n", seq);
     if(seq) free(seq);
 
     double *stats;
