@@ -1,3 +1,6 @@
+1.0.1:
+  - Fix segfault in version 0 (32-bit) files
+
 1.0.0:
   - Added support for version 1 (64-bit) files
 
