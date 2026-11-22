@@ -1,3 +1,6 @@
+1.0.2:
+  - Avoid out of bounds reading of corrupt or malicious files. Also avoid a double free().
+
 1.0.1:
   - Fix segfault in version 0 (32-bit) files
 
